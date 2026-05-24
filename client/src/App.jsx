@@ -4,7 +4,9 @@ function App() {
   const [file, setFile] = useState(null);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [speechText, setSpeechText] = useState("");
 
+  // ---------------- UPLOAD (FIXED ONLY THIS PART) ----------------
   const uploadFile = async () => {
     if (!file) {
       setMsg("⚠️ Please select a file first");
@@ -18,19 +20,67 @@ function App() {
     formData.append("file", file);
 
     try {
-      const res = await fetch("http://localhost:5000/upload", {
+      const res = await fetch("http://localhost:5000/transcribe", {
         method: "POST",
         body: formData,
       });
 
       const data = await res.json();
-      setMsg("✅ " + data.message);
 
+      if (data.text) {
+        setSpeechText(data.text);
+        setMsg("✅ Transcription successful");
+      } else {
+        setMsg("❌ No text returned");
+      }
     } catch (error) {
       setMsg("❌ Upload failed");
     }
 
     setLoading(false);
+  };
+
+  // ---------------- SPEECH (UNCHANGED) ----------------
+  const startSpeech = () => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Chrome use kar");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    setMsg("🎤 Speak NOW...");
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+
+      setSpeechText(transcript);
+      setMsg("✅ Text captured");
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === "no-speech") {
+        setMsg("⚠️ No speech detected, try speaking immediately");
+      } else {
+        setMsg("❌ Error: " + event.error);
+      }
+    };
+
+    setTimeout(() => {
+      recognition.start();
+    }, 300);
   };
 
   return (
@@ -39,10 +89,10 @@ function App() {
         <h1 style={styles.title}>🎤 Speech to Text Upload</h1>
 
         <p style={styles.subtitle}>
-          Upload your audio file to process speech-to-text
+          Upload audio OR use speech recognition
         </p>
 
-        {/* Custom File Upload */}
+        {/* FILE UPLOAD */}
         <label style={styles.fileLabel}>
           Choose Audio File
           <input
@@ -52,25 +102,36 @@ function App() {
           />
         </label>
 
-        {/* Selected File Name */}
-        {file && (
-          <p style={styles.fileName}>
-            Selected: {file.name}
-          </p>
-        )}
+        {file && <p style={styles.fileName}>Selected: {file.name}</p>}
 
-        {/* Upload Button */}
         <button onClick={uploadFile} style={styles.button}>
-          {loading ? "Uploading..." : "Upload File"}
+          {loading ? "Processing..." : "Upload File"}
         </button>
 
-        {/* Message */}
+        {/* SPEECH BUTTON */}
+        <button
+          onClick={startSpeech}
+          style={{ ...styles.button, marginTop: "10px", background: "#22c55e" }}
+        >
+          🎤 Start Speaking
+        </button>
+
+        {/* OUTPUT */}
+        {speechText && (
+          <div style={styles.speechBox}>
+            <p>🧠 Speech Text:</p>
+            <strong>{speechText}</strong>
+          </div>
+        )}
+
+        {/* MESSAGE */}
         {msg && <p style={styles.message}>{msg}</p>}
       </div>
     </div>
   );
 }
 
+// ---------------- STYLES ----------------
 const styles = {
   container: {
     height: "100vh",
@@ -79,27 +140,23 @@ const styles = {
     alignItems: "center",
     background: "#0f172a",
   },
-
   card: {
     background: "#1e293b",
     padding: "30px",
     borderRadius: "12px",
     textAlign: "center",
-    width: "350px",
+    width: "380px",
     boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
   },
-
   title: {
     color: "#fff",
     marginBottom: "10px",
   },
-
   subtitle: {
     color: "#94a3b8",
     fontSize: "14px",
     marginBottom: "20px",
   },
-
   fileLabel: {
     display: "inline-block",
     background: "#334155",
@@ -108,15 +165,12 @@ const styles = {
     borderRadius: "8px",
     cursor: "pointer",
     marginBottom: "12px",
-    fontSize: "14px",
   },
-
   fileName: {
     color: "#cbd5e1",
     fontSize: "14px",
     marginBottom: "15px",
   },
-
   button: {
     background: "#3b82f6",
     color: "#fff",
@@ -125,12 +179,17 @@ const styles = {
     borderRadius: "8px",
     cursor: "pointer",
     width: "100%",
-    transition: "0.3s",
   },
-
   message: {
     marginTop: "15px",
     color: "#22c55e",
+  },
+  speechBox: {
+    marginTop: "15px",
+    padding: "10px",
+    background: "#0f172a",
+    borderRadius: "8px",
+    color: "#fff",
   },
 };
 
