@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 function App() {
   const [file, setFile] = useState(null);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [speechText, setSpeechText] = useState("");
+  const [recording, setRecording] = useState(false);
 
-  // ---------------- UPLOAD (FIXED ONLY THIS PART) ----------------
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  // ---------------- FILE UPLOAD ----------------
   const uploadFile = async () => {
     if (!file) {
       setMsg("⚠️ Please select a file first");
@@ -40,7 +44,77 @@ function App() {
     setLoading(false);
   };
 
-  // ---------------- SPEECH (UNCHANGED) ----------------
+  // ---------------- MEDIA RECORDER ----------------
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100,
+        },
+      });
+
+      const mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorderRef.current = mediaRecorder;
+
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        setLoading(true);
+        setMsg("⏳ Processing recording...");
+
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: "audio/webm",
+        });
+
+        const audioFile = new File([audioBlob], "recording.wav");
+
+        const formData = new FormData();
+        formData.append("file", audioFile);
+
+        try {
+          const res = await fetch("http://localhost:5000/transcribe", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await res.json();
+
+          if (data.text) {
+            setSpeechText(data.text);
+            setMsg("✅ Recording transcribed");
+          } else {
+            setMsg("❌ No text returned");
+          }
+        } catch (error) {
+          setMsg("❌ Recording upload failed");
+        }
+
+        setLoading(false);
+      };
+
+      mediaRecorder.start();
+
+      setRecording(true);
+      setMsg("🎤 Recording started...");
+    } catch (error) {
+      setMsg("❌ Microphone access denied");
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current.stop();
+    setRecording(false);
+    setMsg("⏹️ Recording stopped");
+  };
+
+  // ---------------- SPEECH RECOGNITION ----------------
   const startSpeech = () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -98,6 +172,7 @@ function App() {
           <input
             type="file"
             hidden
+            accept="audio/*"
             onChange={(e) => setFile(e.target.files[0])}
           />
         </label>
@@ -108,10 +183,39 @@ function App() {
           {loading ? "Processing..." : "Upload File"}
         </button>
 
+        {/* RECORDING BUTTONS */}
+        {!recording ? (
+          <button
+            onClick={startRecording}
+            style={{
+              ...styles.button,
+              marginTop: "10px",
+              background: "#f59e0b",
+            }}
+          >
+            🎙️ Start Recording
+          </button>
+        ) : (
+          <button
+            onClick={stopRecording}
+            style={{
+              ...styles.button,
+              marginTop: "10px",
+              background: "#ef4444",
+            }}
+          >
+            ⏹️ Stop Recording
+          </button>
+        )}
+
         {/* SPEECH BUTTON */}
         <button
           onClick={startSpeech}
-          style={{ ...styles.button, marginTop: "10px", background: "#22c55e" }}
+          style={{
+            ...styles.button,
+            marginTop: "10px",
+            background: "#22c55e",
+          }}
         >
           🎤 Start Speaking
         </button>
@@ -185,12 +289,17 @@ const styles = {
     color: "#22c55e",
   },
   speechBox: {
-    marginTop: "15px",
-    padding: "10px",
-    background: "#0f172a",
-    borderRadius: "8px",
-    color: "#fff",
-  },
+  marginTop: "15px",
+  padding: "10px",
+  background: "#0f172a",
+  borderRadius: "8px",
+  color: "#fff",
+  wordBreak: "break-word",
+  whiteSpace: "pre-wrap",
+  textAlign: "left",
+  maxHeight: "250px",
+  overflowY: "auto",
+},
 };
 
 export default App;
