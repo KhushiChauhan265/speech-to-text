@@ -38,7 +38,7 @@ app.get("/", (req, res) => {
 });
 
 // =====================================================
-// 🔥 AUDIO FILE → TEXT (WHISPER LOCAL)
+//  AUDIO FILE → TEXT (WHISPER LOCAL)
 // =====================================================
 
 app.post("/transcribe", upload.single("file"), async (req, res) => {
@@ -70,7 +70,8 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       const savedAudio = new Audio({
         filename: req.file.filename,
         filepath: filePath,
-        transcript: text,
+
+        transcription: text,
       });
 
       await savedAudio.save();
@@ -81,6 +82,28 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       });
 
     });
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message,
+    });
+
+  }
+});
+
+// =====================================================
+// FETCH ALL TRANSCRIPTIONS
+// =====================================================
+
+app.get("/transcriptions", async (req, res) => {
+  try {
+
+    const data = await Audio.find().sort({
+      uploadDate: -1,
+    });
+
+    res.json(data);
 
   } catch (error) {
 

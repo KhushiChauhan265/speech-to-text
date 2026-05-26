@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 function App() {
   const [file, setFile] = useState(null);
@@ -7,8 +7,28 @@ function App() {
   const [speechText, setSpeechText] = useState("");
   const [recording, setRecording] = useState(false);
 
+  // NEW STATE FOR HISTORY
+  const [history, setHistory] = useState([]);
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+
+  // ---------------- FETCH HISTORY ----------------
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/transcriptions");
+
+      const data = await res.json();
+
+      setHistory(data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
 
   // ---------------- COMMON API FUNCTION ----------------
   const sendAudioToBackend = async (audioFile) => {
@@ -17,7 +37,6 @@ function App() {
 
     try {
       setLoading(true);
-      //setMsg("⏳ Generating transcription...");
 
       const res = await fetch("http://localhost:5000/transcribe", {
         method: "POST",
@@ -29,6 +48,9 @@ function App() {
       if (data.text) {
         setSpeechText(data.text);
         setMsg("✅ Transcription successful");
+
+        // REFRESH HISTORY
+        fetchHistory();
       } else {
         setMsg("❌ No transcription returned");
       }
@@ -94,12 +116,13 @@ function App() {
   };
 
   const stopRecording = () => {
-  if (mediaRecorderRef.current) {
-    mediaRecorderRef.current.stop();
-  }
-  setRecording(false);
-  setMsg("⏹️ Recording stopped");
-};
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+    }
+
+    setRecording(false);
+    setMsg("⏹️ Recording stopped");
+  };
 
   // ---------------- SPEECH RECOGNITION ----------------
   const startSpeech = () => {
@@ -240,6 +263,27 @@ function App() {
 
         {/* MESSAGE */}
         {msg && <p style={styles.message}>{msg}</p>}
+
+        {/* HISTORY SECTION */}
+        {history.length > 0 && (
+          <div style={styles.historyContainer}>
+            <h2 style={styles.historyTitle}>
+              📜 Previous Transcriptions
+            </h2>
+
+            {history.map((item) => (
+              <div key={item._id} style={styles.historyCard}>
+                <p style={styles.historyFile}>
+                  🎵 {item.filename}
+                </p>
+
+                <p style={styles.historyText}>
+                  {item.transcription}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -248,11 +292,12 @@ function App() {
 // ---------------- STYLES ----------------
 const styles = {
   container: {
-    height: "100vh",
+    minHeight: "100vh",
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
     background: "#0f172a",
+    padding: "20px",
   },
 
   card: {
@@ -260,7 +305,7 @@ const styles = {
     padding: "30px",
     borderRadius: "12px",
     textAlign: "center",
-    width: "380px",
+    width: "420px",
     boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
   },
 
@@ -324,6 +369,38 @@ const styles = {
     textAlign: "left",
     maxHeight: "250px",
     overflowY: "auto",
+  },
+
+  // HISTORY
+  historyContainer: {
+    marginTop: "25px",
+    textAlign: "left",
+  },
+
+  historyTitle: {
+    color: "#fff",
+    marginBottom: "15px",
+    fontSize: "20px",
+  },
+
+  historyCard: {
+    background: "#0f172a",
+    padding: "12px",
+    borderRadius: "8px",
+    marginBottom: "12px",
+  },
+
+  historyFile: {
+    color: "#38bdf8",
+    fontSize: "14px",
+    marginBottom: "8px",
+  },
+
+  historyText: {
+    color: "#fff",
+    fontSize: "14px",
+    wordBreak: "break-word",
+    whiteSpace: "pre-wrap",
   },
 };
 
