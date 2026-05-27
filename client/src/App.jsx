@@ -15,13 +15,20 @@ function App() {
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
 
+  // ---------------- ERROR STATE  ----------------
+  const [error, setError] = useState("");
+
   // ---------------- HISTORY ----------------
   const fetchHistory = async () => {
     try {
       const res = await fetch("http://localhost:5000/transcriptions");
+
+      if (!res.ok) throw new Error("Failed to fetch history");
+
       const data = await res.json();
       setHistory(data);
     } catch (err) {
+      setError("❌ Unable to load history");
       console.error(err);
     }
   };
@@ -30,6 +37,15 @@ function App() {
     fetchHistory();
   }, []);
 
+  // ---------------- VALIDATION ----------------
+  const allowedTypes = [
+    "audio/mp3",
+    "audio/wav",
+    "audio/mpeg",
+    "audio/webm",
+    "video/mp4",
+  ];
+
   // ---------------- UPLOAD ----------------
   const sendAudio = async (audioFile) => {
     const formData = new FormData();
@@ -37,12 +53,15 @@ function App() {
 
     setLoading(true);
     setMsg("");
+    setError("");
 
     try {
       const res = await fetch("http://localhost:5000/transcribe", {
         method: "POST",
         body: formData,
       });
+
+      if (!res.ok) throw new Error("Server error during transcription");
 
       const data = await res.json();
 
@@ -51,49 +70,62 @@ function App() {
         setMsg("✅ Transcription completed");
         fetchHistory();
       } else {
-        setMsg("❌ No text returned");
+        setError("❌ No text returned from server");
       }
     } catch (err) {
-      setMsg("❌ Server error");
+      setError(err.message || "❌ Server error");
     } finally {
       setLoading(false);
     }
   };
 
   const uploadFile = async () => {
-    if (!file) return setMsg("⚠️ Please select a file first");
+    setError("");
+    setMsg("");
+
+    if (!file) return setError("⚠️ Please select a file first");
+
+    if (!allowedTypes.includes(file.type)) {
+      return setError("❌ Invalid file type selected");
+    }
+
     await sendAudio(file);
   };
 
   // ---------------- RECORDING ----------------
   const startRecording = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    const mediaRecorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = mediaRecorder;
-    chunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
 
-    mediaRecorder.ondataavailable = (e) => {
-      chunksRef.current.push(e.data);
-    };
+      mediaRecorder.ondataavailable = (e) => {
+        chunksRef.current.push(e.data);
+      };
 
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-      const file = new File([blob], "recording.webm", {
-        type: "audio/webm",
-      });
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const file = new File([blob], "recording.webm", {
+          type: "audio/webm",
+        });
 
-      await sendAudio(file);
-    };
+        await sendAudio(file);
+      };
 
-    mediaRecorder.start();
-    setRecording(true);
-    setMsg("🎤 Recording...");
+      mediaRecorder.start();
+      setRecording(true);
+      setMsg("🎤 Recording...");
+      setError("");
 
-    setRecordTime(0);
-    timerRef.current = setInterval(() => {
-      setRecordTime((t) => t + 1);
-    }, 1000);
+      setRecordTime(0);
+      timerRef.current = setInterval(() => {
+        setRecordTime((t) => t + 1);
+      }, 1000);
+    } catch (err) {
+      setError("❌ Microphone access denied");
+    }
   };
 
   const stopRecording = () => {
@@ -128,6 +160,7 @@ function App() {
 
     setIsSpeaking(true);
     setMsg("🎤 Listening...");
+    setError("");
 
     recognition.onresult = (event) => {
       let interim = "";
@@ -147,7 +180,7 @@ function App() {
 
     recognition.onerror = () => {
       setIsSpeaking(false);
-      setMsg("❌ Speech error");
+      setError("❌ Speech recognition error");
     };
 
     recognition.onend = () => {
@@ -198,11 +231,14 @@ function App() {
           </div>
         )}
 
-        {/* MESSAGE */}
+        {/* SUCCESS MESSAGE */}
         {!loading && msg && (
-          <div className="mb-3 text-sm text-green-400">
-            {msg}
-          </div>
+          <div className="mb-3 text-sm text-green-400">{msg}</div>
+        )}
+
+        {/* ERROR MESSAGE */}
+        {error && (
+          <div className="mb-3 text-sm text-red-400">{error}</div>
         )}
 
         {/* RESULT */}
@@ -281,13 +317,9 @@ function App() {
                 key={item._id}
                 className="bg-slate-900 p-4 rounded-xl hover:bg-slate-800 transition"
               >
-                <p className="text-purple-400">
-                  {item.filename}
-                </p>
+                <p className="text-purple-400">{item.filename}</p>
 
-                <p className="mt-1">
-                  {item.transcription}
-                </p>
+                <p className="mt-1">{item.transcription}</p>
 
                 <div className="flex gap-3 mt-3">
                   <button
@@ -299,10 +331,7 @@ function App() {
 
                   <button
                     onClick={() =>
-                      downloadText(
-                        item.transcription,
-                        item.filename
-                      )
+                      downloadText(item.transcription, item.filename)
                     }
                     className="bg-slate-800 px-3 py-1 rounded hover:bg-slate-700 transition"
                   >
