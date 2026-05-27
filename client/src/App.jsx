@@ -5,24 +5,24 @@ function App() {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [speechText, setSpeechText] = useState("");
-  const [recording, setRecording] = useState(false);
-
-  // NEW STATE FOR HISTORY
   const [history, setHistory] = useState([]);
+  const [recording, setRecording] = useState(false);
+  const [recordTime, setRecordTime] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const recognitionRef = useRef(null);
 
-  // ---------------- FETCH HISTORY ----------------
+  // ---------------- HISTORY ----------------
   const fetchHistory = async () => {
     try {
       const res = await fetch("http://localhost:5000/transcriptions");
-
       const data = await res.json();
-
       setHistory(data);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -30,14 +30,15 @@ function App() {
     fetchHistory();
   }, []);
 
-  // ---------------- COMMON API FUNCTION ----------------
-  const sendAudioToBackend = async (audioFile) => {
+  // ---------------- UPLOAD ----------------
+  const sendAudio = async (audioFile) => {
     const formData = new FormData();
     formData.append("file", audioFile);
 
-    try {
-      setLoading(true);
+    setLoading(true);
+    setMsg("");
 
+    try {
       const res = await fetch("http://localhost:5000/transcribe", {
         method: "POST",
         body: formData,
@@ -47,138 +48,176 @@ function App() {
 
       if (data.text) {
         setSpeechText(data.text);
-        setMsg("✅ Transcription successful");
-
-        // REFRESH HISTORY
+        setMsg("✅ Transcription completed");
         fetchHistory();
       } else {
-        setMsg("❌ No transcription returned");
+        setMsg("❌ No text returned");
       }
-    } catch (error) {
-      console.error(error);
-      setMsg("❌ Backend connection failed");
+    } catch (err) {
+      setMsg("❌ Server error");
     } finally {
       setLoading(false);
     }
   };
 
-  // ---------------- FILE UPLOAD ----------------
   const uploadFile = async () => {
-    if (!file) {
-      setMsg("⚠️ Please select a file first");
-      return;
-    }
-
-    await sendAudioToBackend(file);
+    if (!file) return setMsg("⚠️ Please select a file first");
+    await sendAudio(file);
   };
 
-  // ---------------- MEDIA RECORDER ----------------
+  // ---------------- RECORDING ----------------
   const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 44100,
-        },
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    const mediaRecorder = new MediaRecorder(stream);
+    mediaRecorderRef.current = mediaRecorder;
+    chunksRef.current = [];
+
+    mediaRecorder.ondataavailable = (e) => {
+      chunksRef.current.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const file = new File([blob], "recording.webm", {
+        type: "audio/webm",
       });
 
-      const mediaRecorder = new MediaRecorder(stream);
+      await sendAudio(file);
+    };
 
-      mediaRecorderRef.current = mediaRecorder;
+    mediaRecorder.start();
+    setRecording(true);
+    setMsg("🎤 Recording...");
 
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
-        });
-
-        const audioFile = new File([audioBlob], "recording.webm", {
-          type: "audio/webm",
-        });
-
-        await sendAudioToBackend(audioFile);
-      };
-
-      mediaRecorder.start();
-
-      setRecording(true);
-      setMsg("🎤 Recording started...");
-    } catch (error) {
-      console.error(error);
-      setMsg("❌ Microphone access denied");
-    }
+    setRecordTime(0);
+    timerRef.current = setInterval(() => {
+      setRecordTime((t) => t + 1);
+    }, 1000);
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-    }
-
+    mediaRecorderRef.current?.stop();
+    clearInterval(timerRef.current);
     setRecording(false);
-    setMsg("⏹️ Recording stopped");
+    setMsg("⏹ Recording stopped");
   };
 
-  // ---------------- SPEECH RECOGNITION ----------------
-  const startSpeech = () => {
+  // ---------------- SPEECH TOGGLE ----------------
+  const toggleSpeech = () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
-      alert("Please use Google Chrome");
+    if (!SpeechRecognition) return alert("Use Chrome");
+
+    if (isSpeaking) {
+      recognitionRef.current?.stop();
+      setIsSpeaking(false);
+      setMsg("⏹ Speech stopped");
       return;
     }
 
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
 
     recognition.lang = "en-US";
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
 
-    setMsg("🎤 Speak NOW...");
+    let finalText = "";
+
+    setIsSpeaking(true);
+    setMsg("🎤 Listening...");
 
     recognition.onresult = (event) => {
-      let transcript = "";
+      let interim = "";
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
+        const text = event.results[i][0].transcript;
+
+        if (event.results[i].isFinal) {
+          finalText += text + " ";
+        } else {
+          interim += text;
+        }
       }
 
-      setSpeechText(transcript);
-      setMsg("✅ Text captured");
+      setSpeechText(finalText + interim);
     };
 
-    recognition.onerror = (event) => {
-      if (event.error === "no-speech") {
-        setMsg("⚠️ No speech detected");
-      } else {
-        setMsg("❌ Error: " + event.error);
-      }
+    recognition.onerror = () => {
+      setIsSpeaking(false);
+      setMsg("❌ Speech error");
     };
 
-    setTimeout(() => {
-      recognition.start();
-    }, 300);
+    recognition.onend = () => {
+      setIsSpeaking(false);
+    };
+
+    recognition.start();
   };
 
+  // ---------------- UTIL ----------------
+  const copyText = (text) => {
+    navigator.clipboard.writeText(text);
+    setMsg("📋 Copied!");
+  };
+
+  const downloadText = (text, name) => {
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name}.txt`;
+    a.click();
+  };
+
+  const formatTime = (s) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(
+      s % 60
+    ).padStart(2, "0")}`;
+
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>🎤 Speech to Text Upload</h1>
+    <div className="min-h-screen bg-black text-white">
 
-        <p style={styles.subtitle}>
-          Upload audio OR use speech recognition
-        </p>
+      {/* HEADER */}
+      <div className="border-b border-slate-800 px-6 py-4">
+        <h1 className="text-3xl font-extrabold text-purple-400 tracking-wide">
+          🎤 Speech To Text
+        </h1>
+      </div>
 
-        {/* FILE INPUT */}
-        <label style={styles.fileLabel}>
-          Choose Audio File
+      <div className="max-w-5xl mx-auto p-6">
+
+        {/* LOADING */}
+        {loading && (
+          <div className="mb-4 flex items-center gap-2 text-yellow-400">
+            <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
+            Processing audio...
+          </div>
+        )}
+
+        {/* MESSAGE */}
+        {!loading && msg && (
+          <div className="mb-3 text-sm text-green-400">
+            {msg}
+          </div>
+        )}
+
+        {/* RESULT */}
+        {speechText && (
+          <div className="bg-slate-900 p-4 rounded-xl mb-6 hover:bg-slate-800 transition">
+            <p className="text-gray-400 text-sm mb-2">
+              Transcribed Text
+            </p>
+            <p>{speechText}</p>
+          </div>
+        )}
+
+        {/* UPLOAD */}
+        <label className="border-2 border-dashed border-purple-600 rounded-2xl p-10 flex flex-col items-center cursor-pointer hover:bg-slate-900 transition">
+          <p className="text-gray-300">Drag & drop audio file</p>
           <input
             type="file"
             hidden
@@ -188,220 +227,100 @@ function App() {
         </label>
 
         {file && (
-          <p style={styles.fileName}>
+          <p className="text-sm text-gray-400 mt-2">
             Selected: {file.name}
           </p>
         )}
 
-        {/* FILE UPLOAD BUTTON */}
         <button
           onClick={uploadFile}
-          style={{
-            ...styles.button,
-            opacity: loading ? 0.7 : 1,
-          }}
-          disabled={loading}
+          className="w-full mt-4 bg-purple-600 py-3 rounded-xl hover:bg-purple-700 transition"
         >
-          {loading ? "Processing..." : "Upload File"}
+          Upload Audio
         </button>
 
-        {/* RECORDING */}
-        {!recording ? (
+        {/* ACTIONS */}
+        <div className="grid md:grid-cols-2 gap-4 mt-6">
           <button
             onClick={startRecording}
-            disabled={loading}
-            style={{
-              ...styles.button,
-              marginTop: "10px",
-              background: "#f59e0b",
-              opacity: loading ? 0.7 : 1,
-            }}
+            className="bg-slate-900 py-4 rounded-xl hover:scale-105 transition"
           >
-            🎙️ Start Recording
+            🎙️ Record
           </button>
-        ) : (
+
           <button
-            onClick={stopRecording}
-            style={{
-              ...styles.button,
-              marginTop: "10px",
-              background: "#ef4444",
-            }}
+            onClick={toggleSpeech}
+            className={`py-4 rounded-xl hover:scale-105 transition ${
+              isSpeaking ? "bg-red-600" : "bg-slate-900"
+            }`}
           >
-            ⏹️ Stop Recording
+            {isSpeaking ? "⏹ Stop Speaking" : "🎤 Speak Live"}
           </button>
-        )}
+        </div>
 
-        {/* SPEECH BUTTON */}
-        <button
-          onClick={startSpeech}
-          disabled={loading}
-          style={{
-            ...styles.button,
-            marginTop: "10px",
-            background: "#22c55e",
-            opacity: loading ? 0.7 : 1,
-          }}
-        >
-          🎤 Start Speaking
-        </button>
-
-        {/* LOADING */}
-        {loading && (
-          <p style={styles.loadingText}>
-            ⏳ Please wait, generating transcription...
-          </p>
-        )}
-
-        {/* OUTPUT */}
-        {speechText && (
-          <div style={styles.speechBox}>
-            <p>🧠 Speech Text:</p>
-            <strong>{speechText}</strong>
+        {/* TIMER */}
+        {recording && (
+          <div className="mt-4 text-red-400 flex gap-3 items-center">
+            ⏺ {formatTime(recordTime)}
+            <button
+              onClick={stopRecording}
+              className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
+            >
+              Stop
+            </button>
           </div>
         )}
 
-        {/* MESSAGE */}
-        {msg && <p style={styles.message}>{msg}</p>}
+        {/* HISTORY */}
+        <div className="mt-10">
+          <h2 className="text-xl mb-3">History</h2>
 
-        {/* HISTORY SECTION */}
-        {history.length > 0 && (
-          <div style={styles.historyContainer}>
-            <h2 style={styles.historyTitle}>
-              📜 Previous Transcriptions
-            </h2>
-
+          <div className="max-h-80 overflow-y-auto space-y-3 pr-2">
             {history.map((item) => (
-              <div key={item._id} style={styles.historyCard}>
-                <p style={styles.historyFile}>
-                  🎵 {item.filename}
+              <div
+                key={item._id}
+                className="bg-slate-900 p-4 rounded-xl hover:bg-slate-800 transition"
+              >
+                <p className="text-purple-400">
+                  {item.filename}
                 </p>
 
-                <p style={styles.historyText}>
+                <p className="mt-1">
                   {item.transcription}
+                </p>
+
+                <div className="flex gap-3 mt-3">
+                  <button
+                    onClick={() => copyText(item.transcription)}
+                    className="bg-slate-800 px-3 py-1 rounded hover:bg-slate-700 transition"
+                  >
+                    📋 Copy
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      downloadText(
+                        item.transcription,
+                        item.filename
+                      )
+                    }
+                    className="bg-slate-800 px-3 py-1 rounded hover:bg-slate-700 transition"
+                  >
+                    ⬇ Download
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500 mt-2">
+                  {new Date(item.uploadDate).toLocaleString()}
                 </p>
               </div>
             ))}
           </div>
-        )}
+        </div>
+
       </div>
     </div>
   );
 }
-
-// ---------------- STYLES ----------------
-const styles = {
-  container: {
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    background: "#0f172a",
-    padding: "20px",
-  },
-
-  card: {
-    background: "#1e293b",
-    padding: "30px",
-    borderRadius: "12px",
-    textAlign: "center",
-    width: "420px",
-    boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
-  },
-
-  title: {
-    color: "#fff",
-    marginBottom: "10px",
-  },
-
-  subtitle: {
-    color: "#94a3b8",
-    fontSize: "14px",
-    marginBottom: "20px",
-  },
-
-  fileLabel: {
-    display: "inline-block",
-    background: "#334155",
-    color: "#fff",
-    padding: "10px 18px",
-    borderRadius: "8px",
-    cursor: "pointer",
-    marginBottom: "12px",
-  },
-
-  fileName: {
-    color: "#cbd5e1",
-    fontSize: "14px",
-    marginBottom: "15px",
-  },
-
-  button: {
-    background: "#3b82f6",
-    color: "#fff",
-    border: "none",
-    padding: "10px 15px",
-    borderRadius: "8px",
-    cursor: "pointer",
-    width: "100%",
-    transition: "0.2s",
-  },
-
-  message: {
-    marginTop: "15px",
-    color: "#22c55e",
-  },
-
-  loadingText: {
-    marginTop: "12px",
-    color: "#facc15",
-    fontSize: "14px",
-  },
-
-  speechBox: {
-    marginTop: "15px",
-    padding: "10px",
-    background: "#0f172a",
-    borderRadius: "8px",
-    color: "#fff",
-    wordBreak: "break-word",
-    whiteSpace: "pre-wrap",
-    textAlign: "left",
-    maxHeight: "250px",
-    overflowY: "auto",
-  },
-
-  // HISTORY
-  historyContainer: {
-    marginTop: "25px",
-    textAlign: "left",
-  },
-
-  historyTitle: {
-    color: "#fff",
-    marginBottom: "15px",
-    fontSize: "20px",
-  },
-
-  historyCard: {
-    background: "#0f172a",
-    padding: "12px",
-    borderRadius: "8px",
-    marginBottom: "12px",
-  },
-
-  historyFile: {
-    color: "#38bdf8",
-    fontSize: "14px",
-    marginBottom: "8px",
-  },
-
-  historyText: {
-    color: "#fff",
-    fontSize: "14px",
-    wordBreak: "break-word",
-    whiteSpace: "pre-wrap",
-  },
-};
 
 export default App;

@@ -10,121 +10,53 @@ const Audio = require("./models/Audio");
 
 const app = express();
 
-// ---------------- MIDDLEWARE ----------------
 app.use(cors());
 app.use(express.json());
 
-// ---------------- UPLOAD FOLDER ----------------
 if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads");
 }
 
-// ---------------- MULTER ----------------
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
 
 const upload = multer({ storage });
 
-// ---------------- TEST ROUTE ----------------
 app.get("/", (req, res) => {
-  res.send("Backend is running");
+  res.send("Backend running");
 });
-
-// =====================================================
-//  AUDIO FILE → TEXT (WHISPER LOCAL)
-// =====================================================
 
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        message: "No audio file uploaded",
-      });
-    }
-
     const filePath = req.file.path;
 
-    console.log("FILE PATH:", filePath);
-
-    exec(`py transcribe.py "${filePath}"`, async (err, stdout, stderr) => {
-
-      if (err) {
-        console.log("ERROR:", err);
-        console.log("STDERR:", stderr);
-
-        return res.status(500).json({
-          error: err.message,
-        });
-      }
-
+    exec(`py transcribe.py "${filePath}"`, async (err, stdout) => {
       const text = stdout.trim();
 
-      // SAVE TO MONGODB
-      const savedAudio = new Audio({
+      const saved = new Audio({
         filename: req.file.filename,
         filepath: filePath,
-
         transcription: text,
       });
 
-      await savedAudio.save();
+      await saved.save();
 
-      res.json({
-        success: true,
-        text: text,
-      });
-
+      res.json({ success: true, text });
     });
 
-  } catch (error) {
-
-    res.status(500).json({
-      error: error.message,
-    });
-
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
-
-// =====================================================
-// FETCH ALL TRANSCRIPTIONS
-// =====================================================
 
 app.get("/transcriptions", async (req, res) => {
-  try {
-
-    const data = await Audio.find().sort({
-      uploadDate: -1,
-    });
-
-    res.json(data);
-
-  } catch (error) {
-
-    res.status(500).json({
-      error: error.message,
-    });
-
-  }
+  const data = await Audio.find().sort({ uploadDate: -1 });
+  res.json(data);
 });
 
-// ---------------- MONGODB ----------------
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected"));
 
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log(err));
-
-// ---------------- START SERVER ----------------
-
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(5000, () => console.log("Server running"));
