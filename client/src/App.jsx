@@ -22,9 +22,10 @@ function App() {
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
 
+  // ✅ backend url (new update)
   const API = import.meta.env.VITE_BACKEND_URL;
 
-  // ---------------- AUTH ----------------
+  // ---------------- AUTH SESSION ----------------
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -38,7 +39,7 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ---------------- HISTORY ----------------
+  // ---------------- FETCH HISTORY ----------------
   useEffect(() => {
     if (!session?.user?.id) return;
 
@@ -47,7 +48,7 @@ function App() {
         const res = await fetch(`${API}/history/${session.user.id}`);
         const data = await res.json();
         setHistory(data || []);
-      } catch {
+      } catch (err) {
         setError("❌ Unable to load history");
       }
     };
@@ -75,7 +76,7 @@ function App() {
     await supabase.auth.signOut();
   };
 
-  // ---------------- AUDIO ----------------
+  // ---------------- AUDIO TYPES ----------------
   const allowedTypes = [
     "audio/mp3",
     "audio/wav",
@@ -84,6 +85,7 @@ function App() {
     "video/mp4",
   ];
 
+  // ---------------- SEND AUDIO ----------------
   const sendAudio = async (audioFile) => {
     if (!session?.user?.id) {
       setError("❌ Login required");
@@ -111,6 +113,7 @@ function App() {
       setSpeechText(data.text);
       setMsg("✅ Transcription completed");
 
+      // refresh history
       const historyRes = await fetch(`${API}/history/${session.user.id}`);
       const historyData = await historyRes.json();
       setHistory(historyData || []);
@@ -121,39 +124,55 @@ function App() {
     }
   };
 
+  // ---------------- FILE UPLOAD ----------------
   const uploadFile = async () => {
-    if (!file) return setError("⚠️ Select file first");
-    if (!allowedTypes.includes(file.type)) return setError("❌ Invalid file");
+    setError("");
+    setMsg("");
+
+    if (!file) return setError("⚠️ Please select a file first");
+    if (!allowedTypes.includes(file.type))
+      return setError("❌ Invalid file type");
+
     await sendAudio(file);
   };
 
   // ---------------- RECORDING ----------------
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
 
+      const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      mediaRecorder.ondataavailable = (e) => {
+        chunksRef.current.push(e.data);
+      };
 
       mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(chunksRef.current, {
+          type: "audio/webm",
+        });
+
         const file = new File([blob], "recording.webm", {
           type: "audio/webm",
         });
+
         await sendAudio(file);
       };
 
       mediaRecorder.start();
+
       setRecording(true);
+      setRecordTime(0);
 
       timerRef.current = setInterval(() => {
         setRecordTime((t) => t + 1);
       }, 1000);
     } catch {
-      setError("❌ Mic denied");
+      setError("❌ Microphone access denied");
     }
   };
 
@@ -168,7 +187,9 @@ function App() {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) return alert("Chrome use karo");
+    if (!SpeechRecognition) {
+      return alert("Chrome browser use karo");
+    }
 
     if (isSpeaking) {
       recognitionRef.current?.stop();
@@ -179,17 +200,28 @@ function App() {
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
+    recognition.interimResults = true;
+
+    let finalText = "";
 
     recognition.onresult = (event) => {
-      let text = "";
+      let interim = "";
+
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        text += event.results[i][0].transcript;
+        const text = event.results[i][0].transcript;
+
+        if (event.results[i].isFinal) {
+          finalText += text + " ";
+        } else {
+          interim += text;
+        }
       }
-      setSpeechText(text);
+
+      setSpeechText(finalText + interim);
     };
 
     recognition.onerror = () => {
-      setError("❌ Speech error");
+      setError("❌ Speech recognition error");
       setIsSpeaking(false);
     };
 
@@ -198,22 +230,48 @@ function App() {
     setIsSpeaking(true);
   };
 
+  // ---------------- UTIL ----------------
+  const copyText = (text) => {
+    navigator.clipboard.writeText(text);
+    setMsg("📋 Copied!");
+  };
+
+  const downloadText = (text, name) => {
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name}.txt`;
+    a.click();
+  };
+
+  const formatTime = (s) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(
+      s % 60
+    ).padStart(2, "0")}`;
+
   // ---------------- LOGIN UI ----------------
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black text-white">
         <div className="bg-slate-900 p-6 rounded-xl w-[350px]">
+          <h1 className="text-xl mb-3 text-center">
+            Speech To Text Login
+          </h1>
+
           <input
+            className="w-full p-2 mb-2 bg-slate-800"
+            placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            className="w-full p-2 mb-2 bg-slate-800"
           />
+
           <input
+            className="w-full p-2 mb-3 bg-slate-800"
+            placeholder="Password"
+            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="w-full p-2 mb-2 bg-slate-800"
           />
 
           <button
@@ -234,40 +292,132 @@ function App() {
     );
   }
 
+  // ---------------- MAIN UI ----------------
   return (
-    <div className="min-h-screen bg-black text-white p-6">
-      <h1 className="text-2xl">Speech To Text</h1>
+    <div className="min-h-screen bg-black text-white">
 
-      <button
-        onClick={handleLogout}
-        className="bg-red-600 px-3 py-1 mt-2"
-      >
-        Logout
-      </button>
+      {/* HEADER */}
+      <div className="border-b border-slate-800 px-6 py-4">
+        <h1 className="text-3xl font-bold text-purple-400">
+          🎤 Speech To Text
+        </h1>
 
-      {loading && <p className="text-yellow-400">Processing...</p>}
-      {msg && <p className="text-green-400">{msg}</p>}
-      {error && <p className="text-red-400">{error}</p>}
+        <button
+          onClick={handleLogout}
+          className="mt-2 bg-red-600 px-4 py-2 rounded"
+        >
+          Logout
+        </button>
+      </div>
 
-      <input type="file" onChange={(e) => setFile(e.target.files[0])} />
+      <div className="max-w-5xl mx-auto p-6">
 
-      <button onClick={uploadFile} className="bg-purple-600 p-2 mt-2">
-        Upload
-      </button>
+        {/* LOADING */}
+        {loading && (
+          <p className="text-yellow-400 mb-2">
+            ⏳ Processing audio...
+          </p>
+        )}
 
-      <button onClick={startRecording} className="bg-slate-700 p-2 m-2">
-        Record
-      </button>
+        {/* MSG */}
+        {msg && <p className="text-green-400">{msg}</p>}
+        {error && <p className="text-red-400">{error}</p>}
 
-      <button onClick={stopRecording} className="bg-red-600 p-2 m-2">
-        Stop
-      </button>
+        {/* RESULT */}
+        {speechText && (
+          <div className="bg-slate-900 p-4 rounded-xl mb-6">
+            <p className="text-gray-400">Transcribed Text</p>
+            <p>{speechText}</p>
+          </div>
+        )}
 
-      <button onClick={toggleSpeech} className="bg-blue-600 p-2 m-2">
-        {isSpeaking ? "Stop" : "Speak"}
-      </button>
+        {/* FILE UPLOAD */}
+        <input
+          type="file"
+          onChange={(e) => setFile(e.target.files[0])}
+        />
 
-      <p className="mt-4">{speechText}</p>
+        <button
+          onClick={uploadFile}
+          className="bg-purple-600 px-4 py-2 mt-3"
+        >
+          Upload Audio
+        </button>
+
+        {/* ACTIONS */}
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={startRecording}
+            className="bg-slate-800 px-4 py-2"
+          >
+            🎙 Record
+          </button>
+
+          <button
+            onClick={stopRecording}
+            className="bg-red-600 px-4 py-2"
+          >
+            Stop
+          </button>
+
+          <button
+            onClick={toggleSpeech}
+            className="bg-blue-600 px-4 py-2"
+          >
+            {isSpeaking ? "Stop" : "Speak"}
+          </button>
+        </div>
+
+        {/* TIMER */}
+        {recording && (
+          <p className="text-red-400 mt-2">
+            ⏺ {formatTime(recordTime)}
+          </p>
+        )}
+
+        {/* HISTORY */}
+        <div className="mt-10">
+          <h2 className="text-xl mb-3">History</h2>
+
+          {history.length === 0 ? (
+            <p className="text-gray-400">No history</p>
+          ) : (
+            history.map((item) => (
+              <div
+                key={item._id}
+                className="bg-slate-900 p-4 mb-3 rounded-xl"
+              >
+                <p className="text-purple-400">
+                  {item.filename}
+                </p>
+
+                <p>{item.transcription}</p>
+
+                <div className="flex gap-3 mt-2">
+                  <button
+                    onClick={() =>
+                      copyText(item.transcription)
+                    }
+                  >
+                    📋 Copy
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      downloadText(
+                        item.transcription,
+                        item.filename
+                      )
+                    }
+                  >
+                    ⬇ Download
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
