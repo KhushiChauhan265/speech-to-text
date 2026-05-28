@@ -10,26 +10,26 @@ const Audio = require("./models/Audio");
 
 const app = express();
 
-// ---------------- CORS ----------------
+// ---------------- CORS FIX  ----------------
 app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://your-frontend.vercel.app",
-      "https://your-frontend.netlify.app",
+      "https://speech-to-text-five-delta.vercel.app"
     ],
+    methods: ["GET", "POST"],
     credentials: true,
   })
 );
 
 app.use(express.json());
 
-// ---------------- CREATE UPLOADS FOLDER ----------------
+// ---------------- UPLOAD FOLDER ----------------
 if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads");
 }
 
-// ---------------- MULTER ----------------
+// ---------------- MULTER CONFIG ----------------
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, "uploads/");
@@ -69,12 +69,11 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "User ID missing" });
     }
 
-    exec(`python3 transcribe.py "${filePath}"`, async (err, stdout) => {
+    // Python transcription
+    exec(`python transcribe.py "${filePath}"`, async (err, stdout) => {
       if (err) {
         console.log("Python error:", err);
-        return res.status(500).json({
-          error: "Transcription failed",
-        });
+        return res.status(500).json({ error: "Transcription failed" });
       }
 
       const text = stdout.trim();
@@ -109,7 +108,7 @@ mongoose
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.log("MongoDB Error:", err));
 
-// ---------------- START SERVER ----------------
+// ---------------- SERVER START ----------------
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {

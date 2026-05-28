@@ -47,7 +47,7 @@ function App() {
         const res = await fetch(`${API}/history/${session.user.id}`);
         const data = await res.json();
         setHistory(data || []);
-      } catch (err) {
+      } catch {
         setError("❌ Unable to load history");
       }
     };
@@ -59,7 +59,7 @@ function App() {
   const handleSignup = async () => {
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) alert(error.message);
-    else alert("Signup successful!");
+    else alert("Signup successful! Check email.");
   };
 
   const handleLogin = async () => {
@@ -67,8 +67,8 @@ function App() {
       email,
       password,
     });
-    if (error) alert(error.message);
-    else alert("Login successful!");
+
+    if (error) setError(error.message);
   };
 
   const handleLogout = async () => {
@@ -76,11 +76,17 @@ function App() {
   };
 
   // ---------------- AUDIO ----------------
-  const allowedTypes = ["audio/mp3", "audio/wav", "audio/mpeg", "audio/webm", "video/mp4"];
+  const allowedTypes = [
+    "audio/mp3",
+    "audio/wav",
+    "audio/mpeg",
+    "audio/webm",
+    "video/mp4",
+  ];
 
   const sendAudio = async (audioFile) => {
     if (!session?.user?.id) {
-      setError("❌ User not logged in");
+      setError("❌ Login required");
       return;
     }
 
@@ -100,19 +106,14 @@ function App() {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Server error");
-      }
+      if (!res.ok) throw new Error(data.error || "Server error");
 
-      if (data.text) {
-        setSpeechText(data.text);
-        setMsg("✅ Transcription completed");
+      setSpeechText(data.text);
+      setMsg("✅ Transcription completed");
 
-        const historyRes = await fetch(`${API}/history/${session.user.id}`);
-        const historyData = await historyRes.json();
-        setHistory(historyData || []);
-      }
-
+      const historyRes = await fetch(`${API}/history/${session.user.id}`);
+      const historyData = await historyRes.json();
+      setHistory(historyData || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -121,8 +122,8 @@ function App() {
   };
 
   const uploadFile = async () => {
-    if (!file) return setError("⚠️ Please select a file first");
-    if (!allowedTypes.includes(file.type)) return setError("❌ Invalid file type");
+    if (!file) return setError("⚠️ Select file first");
+    if (!allowedTypes.includes(file.type)) return setError("❌ Invalid file");
     await sendAudio(file);
   };
 
@@ -135,13 +136,13 @@ function App() {
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (e) => {
-        chunksRef.current.push(e.data);
-      };
+      mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
 
       mediaRecorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        const file = new File([blob], "recording.webm", { type: "audio/webm" });
+        const file = new File([blob], "recording.webm", {
+          type: "audio/webm",
+        });
         await sendAudio(file);
       };
 
@@ -151,9 +152,8 @@ function App() {
       timerRef.current = setInterval(() => {
         setRecordTime((t) => t + 1);
       }, 1000);
-
     } catch {
-      setError("❌ Mic access denied");
+      setError("❌ Mic denied");
     }
   };
 
@@ -168,7 +168,7 @@ function App() {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) return alert("Use Chrome");
+    if (!SpeechRecognition) return alert("Chrome use karo");
 
     if (isSpeaking) {
       recognitionRef.current?.stop();
@@ -189,7 +189,7 @@ function App() {
     };
 
     recognition.onerror = () => {
-      setError("❌ Speech recognition error");
+      setError("❌ Speech error");
       setIsSpeaking(false);
     };
 
@@ -203,11 +203,32 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black text-white">
         <div className="bg-slate-900 p-6 rounded-xl w-[350px]">
-          <input value={email} onChange={(e)=>setEmail(e.target.value)} placeholder="Email" className="w-full p-2 mb-2 bg-slate-800"/>
-          <input value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="Password" className="w-full p-2 mb-2 bg-slate-800"/>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            className="w-full p-2 mb-2 bg-slate-800"
+          />
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full p-2 mb-2 bg-slate-800"
+          />
 
-          <button onClick={handleSignup} className="bg-green-600 w-full p-2 mb-2">Signup</button>
-          <button onClick={handleLogin} className="bg-purple-600 w-full p-2">Login</button>
+          <button
+            onClick={handleSignup}
+            className="bg-green-600 w-full p-2 mb-2"
+          >
+            Signup
+          </button>
+
+          <button
+            onClick={handleLogin}
+            className="bg-purple-600 w-full p-2"
+          >
+            Login
+          </button>
         </div>
       </div>
     );
@@ -215,26 +236,38 @@ function App() {
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
-
       <h1 className="text-2xl">Speech To Text</h1>
-      <button onClick={handleLogout} className="bg-red-600 px-3 py-1 mt-2">Logout</button>
+
+      <button
+        onClick={handleLogout}
+        className="bg-red-600 px-3 py-1 mt-2"
+      >
+        Logout
+      </button>
 
       {loading && <p className="text-yellow-400">Processing...</p>}
       {msg && <p className="text-green-400">{msg}</p>}
       {error && <p className="text-red-400">{error}</p>}
 
-      <input type="file" onChange={(e)=>setFile(e.target.files[0])} />
-      <button onClick={uploadFile} className="bg-purple-600 p-2 mt-2">Upload</button>
+      <input type="file" onChange={(e) => setFile(e.target.files[0])} />
 
-      <button onClick={startRecording} className="bg-slate-700 p-2 m-2">Record</button>
-      <button onClick={stopRecording} className="bg-red-600 p-2 m-2">Stop</button>
+      <button onClick={uploadFile} className="bg-purple-600 p-2 mt-2">
+        Upload
+      </button>
+
+      <button onClick={startRecording} className="bg-slate-700 p-2 m-2">
+        Record
+      </button>
+
+      <button onClick={stopRecording} className="bg-red-600 p-2 m-2">
+        Stop
+      </button>
 
       <button onClick={toggleSpeech} className="bg-blue-600 p-2 m-2">
         {isSpeaking ? "Stop" : "Speak"}
       </button>
 
       <p className="mt-4">{speechText}</p>
-
     </div>
   );
 }
