@@ -69,7 +69,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       });
     }
 
-    exec(`py transcribe.py "${filePath}"`, async (err, stdout) => {
+    exec(`python3 transcribe.py "${filePath}"`, async (err, stdout) => {
 
       if (err) {
         console.log(err);
@@ -116,6 +116,8 @@ mongoose
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.log("MongoDB Error:", err));
 
-app.listen(5000, () =>
-  console.log("Server running on port 5000")
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () =>
+  console.log(`Server running on port ${PORT}`)
 );
