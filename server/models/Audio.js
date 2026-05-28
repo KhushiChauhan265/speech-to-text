@@ -2,9 +2,17 @@ const mongoose = require("mongoose");
 
 const audioSchema = new mongoose.Schema({
   filename: String,
+
   filepath: String,
+
   transcription: String,
-  uploadDate: {
+
+  userId: {
+    type: String,
+    required: true,
+  },
+
+  createdAt: {
     type: Date,
     default: Date.now,
   },

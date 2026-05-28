@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { supabase } from "./supabase";
 
 function App() {
   const [file, setFile] = useState(null);
@@ -10,32 +11,84 @@ function App() {
   const [recordTime, setRecordTime] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [session, setSession] = useState(null);
+
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
 
-  // ---------------- ERROR STATE  ----------------
   const [error, setError] = useState("");
 
-  // ---------------- HISTORY ----------------
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch("http://localhost:5000/transcriptions");
+  // ---------------- AUTH SESSION ----------------
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
 
-      if (!res.ok) throw new Error("Failed to fetch history");
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
 
-      const data = await res.json();
-      setHistory(data);
-    } catch (err) {
-      setError("❌ Unable to load history");
-      console.error(err);
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ---------------- FETCH HISTORY ----------------
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:5000/history/${session.user.id}`
+        );
+
+        const data = await res.json();
+
+        setHistory(data);
+      } catch (err) {
+        console.log(err);
+        setError("❌ Unable to load history");
+      }
+    };
+
+    fetchHistory();
+  }, [session]);
+
+  // ---------------- AUTH FUNCTIONS ----------------
+  const handleSignup = async () => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      alert(error.message);
+    } else {
+      alert("Signup successful! Check your email.");
     }
   };
 
-  useEffect(() => {
-    fetchHistory();
-  }, []);
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      alert(error.message);
+    } else {
+      alert("Login successful!");
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
 
   // ---------------- VALIDATION ----------------
   const allowedTypes = [
@@ -46,10 +99,12 @@ function App() {
     "video/mp4",
   ];
 
-  // ---------------- UPLOAD ----------------
+  // ---------------- SEND AUDIO ----------------
   const sendAudio = async (audioFile) => {
     const formData = new FormData();
+
     formData.append("file", audioFile);
+    formData.append("userId", session.user.id);
 
     setLoading(true);
     setMsg("");
@@ -61,14 +116,22 @@ function App() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Server error during transcription");
+      if (!res.ok) {
+        throw new Error("Server error during transcription");
+      }
 
       const data = await res.json();
 
       if (data.text) {
         setSpeechText(data.text);
         setMsg("✅ Transcription completed");
-        fetchHistory();
+
+        const historyRes = await fetch(
+          `http://localhost:5000/history/${session.user.id}`
+        );
+
+        const historyData = await historyRes.json();
+        setHistory(historyData);
       } else {
         setError("❌ No text returned from server");
       }
@@ -79,11 +142,14 @@ function App() {
     }
   };
 
+  // ---------------- FILE UPLOAD ----------------
   const uploadFile = async () => {
     setError("");
     setMsg("");
 
-    if (!file) return setError("⚠️ Please select a file first");
+    if (!file) {
+      return setError("⚠️ Please select a file first");
+    }
 
     if (!allowedTypes.includes(file.type)) {
       return setError("❌ Invalid file type selected");
@@ -95,9 +161,12 @@ function App() {
   // ---------------- RECORDING ----------------
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
 
       const mediaRecorder = new MediaRecorder(stream);
+
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -106,7 +175,10 @@ function App() {
       };
 
       mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(chunksRef.current, {
+          type: "audio/webm",
+        });
+
         const file = new File([blob], "recording.webm", {
           type: "audio/webm",
         });
@@ -115,11 +187,13 @@ function App() {
       };
 
       mediaRecorder.start();
+
       setRecording(true);
       setMsg("🎤 Recording...");
       setError("");
 
       setRecordTime(0);
+
       timerRef.current = setInterval(() => {
         setRecordTime((t) => t + 1);
       }, 1000);
@@ -130,17 +204,21 @@ function App() {
 
   const stopRecording = () => {
     mediaRecorderRef.current?.stop();
+
     clearInterval(timerRef.current);
+
     setRecording(false);
     setMsg("⏹ Recording stopped");
   };
 
-  // ---------------- SPEECH TOGGLE ----------------
+  // ---------------- LIVE SPEECH ----------------
   const toggleSpeech = () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) return alert("Use Chrome");
+    if (!SpeechRecognition) {
+      return alert("Use Chrome Browser");
+    }
 
     if (isSpeaking) {
       recognitionRef.current?.stop();
@@ -150,6 +228,7 @@ function App() {
     }
 
     const recognition = new SpeechRecognition();
+
     recognitionRef.current = recognition;
 
     recognition.lang = "en-US";
@@ -197,12 +276,17 @@ function App() {
   };
 
   const downloadText = (text, name) => {
-    const blob = new Blob([text], { type: "text/plain" });
+    const blob = new Blob([text], {
+      type: "text/plain",
+    });
+
     const url = URL.createObjectURL(blob);
 
     const a = document.createElement("a");
+
     a.href = url;
     a.download = `${name}.txt`;
+
     a.click();
   };
 
@@ -210,6 +294,51 @@ function App() {
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(
       s % 60
     ).padStart(2, "0")}`;
+
+  // ---------------- LOGIN UI ----------------
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="bg-slate-900 p-6 rounded-xl w-[350px]">
+          <h1 className="text-2xl font-bold mb-4 text-center">
+            Speech To Text Login
+          </h1>
+
+          <input
+            type="email"
+            placeholder="Enter Email"
+            className="w-full p-2 mb-3 rounded bg-slate-800"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+
+          <input
+            type="password"
+            placeholder="Enter Password"
+            className="w-full p-2 mb-3 rounded bg-slate-800"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleSignup}
+              className="bg-green-600 px-4 py-2 rounded w-full"
+            >
+              Signup
+            </button>
+
+            <button
+              onClick={handleLogin}
+              className="bg-purple-600 px-4 py-2 rounded w-full"
+            >
+              Login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -219,6 +348,13 @@ function App() {
         <h1 className="text-3xl font-extrabold text-purple-400 tracking-wide">
           🎤 Speech To Text
         </h1>
+
+        <button
+          onClick={handleLogout}
+          className="mt-3 bg-red-600 px-4 py-2 rounded"
+        >
+          Logout
+        </button>
       </div>
 
       <div className="max-w-5xl mx-auto p-6">
@@ -231,14 +367,18 @@ function App() {
           </div>
         )}
 
-        {/* SUCCESS MESSAGE */}
+        {/* SUCCESS */}
         {!loading && msg && (
-          <div className="mb-3 text-sm text-green-400">{msg}</div>
+          <div className="mb-3 text-sm text-green-400">
+            {msg}
+          </div>
         )}
 
-        {/* ERROR MESSAGE */}
+        {/* ERROR */}
         {error && (
-          <div className="mb-3 text-sm text-red-400">{error}</div>
+          <div className="mb-3 text-sm text-red-400">
+            {error}
+          </div>
         )}
 
         {/* RESULT */}
@@ -247,13 +387,17 @@ function App() {
             <p className="text-gray-400 text-sm mb-2">
               Transcribed Text
             </p>
+
             <p>{speechText}</p>
           </div>
         )}
 
-        {/* UPLOAD */}
+        {/* FILE */}
         <label className="border-2 border-dashed border-purple-600 rounded-2xl p-10 flex flex-col items-center cursor-pointer hover:bg-slate-900 transition">
-          <p className="text-gray-300">Drag & drop audio file</p>
+          <p className="text-gray-300">
+            Drag & drop audio file
+          </p>
+
           <input
             type="file"
             hidden
@@ -277,6 +421,7 @@ function App() {
 
         {/* ACTIONS */}
         <div className="grid md:grid-cols-2 gap-4 mt-6">
+
           <button
             onClick={startRecording}
             className="bg-slate-900 py-4 rounded-xl hover:scale-105 transition"
@@ -292,12 +437,14 @@ function App() {
           >
             {isSpeaking ? "⏹ Stop Speaking" : "🎤 Speak Live"}
           </button>
+
         </div>
 
         {/* TIMER */}
         {recording && (
           <div className="mt-4 text-red-400 flex gap-3 items-center">
             ⏺ {formatTime(recordTime)}
+
             <button
               onClick={stopRecording}
               className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
@@ -309,41 +456,63 @@ function App() {
 
         {/* HISTORY */}
         <div className="mt-10">
-          <h2 className="text-xl mb-3">History</h2>
+          <h2 className="text-xl mb-3">
+            History
+          </h2>
 
           <div className="max-h-80 overflow-y-auto space-y-3 pr-2">
-            {history.map((item) => (
-              <div
-                key={item._id}
-                className="bg-slate-900 p-4 rounded-xl hover:bg-slate-800 transition"
-              >
-                <p className="text-purple-400">{item.filename}</p>
 
-                <p className="mt-1">{item.transcription}</p>
+            {history.length > 0 ? (
+              history.map((item) => (
+                <div
+                  key={item._id}
+                  className="bg-slate-900 p-4 rounded-xl hover:bg-slate-800 transition"
+                >
+                  <p className="text-purple-400">
+                    {item.filename}
+                  </p>
 
-                <div className="flex gap-3 mt-3">
-                  <button
-                    onClick={() => copyText(item.transcription)}
-                    className="bg-slate-800 px-3 py-1 rounded hover:bg-slate-700 transition"
-                  >
-                    📋 Copy
-                  </button>
+                  <p className="mt-1">
+                    {item.transcription}
+                  </p>
 
-                  <button
-                    onClick={() =>
-                      downloadText(item.transcription, item.filename)
-                    }
-                    className="bg-slate-800 px-3 py-1 rounded hover:bg-slate-700 transition"
-                  >
-                    ⬇ Download
-                  </button>
+                  <div className="flex gap-3 mt-3">
+
+                    <button
+                      onClick={() =>
+                        copyText(item.transcription)
+                      }
+                      className="bg-slate-800 px-3 py-1 rounded hover:bg-slate-700 transition"
+                    >
+                      📋 Copy
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        downloadText(
+                          item.transcription,
+                          item.filename
+                        )
+                      }
+                      className="bg-slate-800 px-3 py-1 rounded hover:bg-slate-700 transition"
+                    >
+                      ⬇ Download
+                    </button>
+
+                  </div>
+
+                  <p className="text-xs text-gray-500 mt-2">
+                    {new Date(item.createdAt).toLocaleString()}
+                  </p>
+
                 </div>
+              ))
+            ) : (
+              <p className="text-gray-400">
+                No history found
+              </p>
+            )}
 
-                <p className="text-xs text-gray-500 mt-2">
-                  {new Date(item.uploadDate).toLocaleString()}
-                </p>
-              </div>
-            ))}
           </div>
         </div>
 
