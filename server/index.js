@@ -14,24 +14,38 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  process.env.FRONTEND_URL,
-  process.env.FRONTEND_URL_2,
-].filter(Boolean);
+app.use((req, _res, next) => {
+  console.log("Request Origin:", req.headers.origin);
+  next();
+});
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(null, false);
-  },
-  methods: ["GET", "POST", "OPTIONS"],
-  credentials: true,
-};
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
-app.use(cors(corsOptions));
-app.options("/{*any}", cors(corsOptions));
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
 app.use(express.json());
 
 if (!MONGO_URI) {
@@ -132,6 +146,11 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "Missing userId" });
     }
 
+    if (!ASSEMBLYAI_API_KEY) {
+      await safeDeleteFile(req.file.path);
+      return res.status(500).json({ error: "ASSEMBLYAI_API_KEY is missing" });
+    }
+
     filePath = req.file.path;
     const audioFile = await fs.promises.readFile(filePath);
 
@@ -220,7 +239,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       audio: savedAudio,
     });
   } catch (err) {
-    console.log("TRANSCRIBE ERROR:", err?.response?.data || err?.message);
+    console.log("TRANSCRIBE ERROR FULL:", err?.response?.data || err?.message || err);
     await safeDeleteFile(filePath);
 
     res.status(500).json({
@@ -236,12 +255,13 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 app.get("/history/:userId", async (req, res) => {
   try {
     console.log("History requested for userId:", req.params.userId);
+    console.log("Mongo readyState:", mongoose.connection.readyState);
 
     const data = await Audio.find({ userId: req.params.userId }).sort({ createdAt: -1 });
 
     res.json(data);
   } catch (err) {
-    console.log("HISTORY ERROR:", err?.message || err);
+    console.log("HISTORY ERROR FULL:", err);
     res.status(500).json({
       error: err?.message || "Failed to fetch history",
     });
