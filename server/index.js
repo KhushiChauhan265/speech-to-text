@@ -85,21 +85,30 @@ app.get("/", (_req, res) => {
 
 app.get("/live-token", async (_req, res) => {
   try {
-    const tokenRes = await axios.get("https://streaming.assemblyai.com/v3/token", {
-      headers: {
-        Authorization: ASSEMBLYAI_API_KEY,
-      },
-      params: {
+    if (!ASSEMBLYAI_API_KEY) {
+      return res.status(500).json({ error: "ASSEMBLYAI_API_KEY is missing" });
+    }
+
+    const tokenRes = await axios.post(
+      "https://streaming.assemblyai.com/v3/token",
+      {
         expires_in_seconds: 300,
       },
-    });
+      {
+        headers: {
+          Authorization: ASSEMBLYAI_API_KEY,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     res.json({
       token: tokenRes.data.token,
       expires_in_seconds: 300,
     });
   } catch (err) {
-    console.log("LIVE TOKEN ERROR:", err?.response?.data || err?.message);
+    console.log("LIVE TOKEN ERROR FULL:", err?.response?.data || err?.message || err);
+
     res.status(500).json({
       error:
         err?.response?.data?.error ||
