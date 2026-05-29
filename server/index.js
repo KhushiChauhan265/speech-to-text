@@ -20,25 +20,28 @@ const allowedOrigins = [
   process.env.FRONTEND_URL_2,
 ].filter(Boolean);
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST"],
-  })
-);
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  credentials: true,
+};
 
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.log("Mongo Error:", err.message));
+if (!MONGO_URI) {
+  console.log("MONGO_URI is missing in environment variables");
+} else {
+  mongoose
+    .connect(MONGO_URI)
+    .then(() => console.log("MongoDB connected"))
+    .catch((err) => console.log("Mongo Error:", err.message));
+}
 
 const AudioSchema = new mongoose.Schema(
   {
@@ -144,7 +147,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       "https://api.assemblyai.com/v2/transcript",
       {
         audio_url: audioUrl,
-        speech_models: ["universal-3-pro", "universal-2"],
+        speech_model: "universal",
         language_detection: true,
       },
       {
@@ -223,13 +226,19 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 
 app.get("/history/:userId", async (req, res) => {
   try {
+    console.log("History requested for userId:", req.params.userId);
+
     const data = await Audio.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+
     res.json(data);
-  } catch (_err) {
-    res.status(500).json({ error: "Failed to fetch history" });
+  } catch (err) {
+    console.log("HISTORY ERROR:", err?.message || err);
+    res.status(500).json({
+      error: err?.message || "Failed to fetch history",
+    });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
