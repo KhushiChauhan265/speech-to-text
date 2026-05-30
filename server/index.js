@@ -190,7 +190,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       "https://api.assemblyai.com/v2/transcript",
       {
         audio_url: audioUrl,
-        speech_model: "universal",
+         speech_models: ["universal"],
         language_detection: true,
       },
       {
