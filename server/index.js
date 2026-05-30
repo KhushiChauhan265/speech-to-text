@@ -13,14 +13,27 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://speech-to-text-five-delta.vercel.app";
 
 console.log("ASSEMBLYAI_API_KEY exists:", !!ASSEMBLYAI_API_KEY);
 console.log("MONGO_URI exists:", !!MONGO_URI);
 console.log("FRONTEND_URL:", FRONTEND_URL);
 
-app.use((req, _res, next) => {
-  console.log(`${req.method} ${req.originalUrl} | Origin:`, req.headers.origin || "no-origin");
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin === FRONTEND_URL || origin === "http://localhost:5173") {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
   next();
 });
 
@@ -28,8 +41,6 @@ app.use(
   cors({
     origin: [FRONTEND_URL, "http://localhost:5173"],
     credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -103,9 +114,7 @@ app.get("/live-token", async (_req, res) => {
 
     const tokenRes = await axios.post(
       "https://streaming.assemblyai.com/v3/token",
-      {
-        expires_in_seconds: 300,
-      },
+      { expires_in_seconds: 300 },
       {
         headers: {
           Authorization: ASSEMBLYAI_API_KEY,
@@ -116,7 +125,7 @@ app.get("/live-token", async (_req, res) => {
     );
 
     return res.json({
-      token: tokenRes?.data?.token,
+      token: tokenRes.data.token,
       expires_in_seconds: 300,
     });
   } catch (err) {
@@ -256,15 +265,11 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 
 app.get("/history/:userId", async (req, res) => {
   try {
-    console.log("History requested for userId:", req.params.userId);
-    console.log("Mongo readyState:", mongoose.connection.readyState);
-
     if (mongoose.connection.readyState !== 1) {
       return res.status(500).json({ error: "Database not connected" });
     }
 
     const data = await Audio.find({ userId: req.params.userId }).sort({ createdAt: -1 });
-
     return res.json(data);
   } catch (err) {
     console.log("HISTORY ERROR FULL:", err);
@@ -276,14 +281,6 @@ app.get("/history/:userId", async (req, res) => {
 
 app.use((err, _req, res, _next) => {
   console.log("GLOBAL ERROR:", err?.response?.data || err?.message || err);
-
-  if (err instanceof multer.MulterError) {
-    return res.status(400).json({ error: err.message });
-  }
-
-  if (err?.message === "Only audio files are allowed") {
-    return res.status(400).json({ error: err.message });
-  }
 
   return res.status(500).json({
     error: err?.message || "Internal server error",
