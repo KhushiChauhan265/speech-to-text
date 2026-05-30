@@ -13,38 +13,27 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+
+console.log("ASSEMBLYAI_API_KEY exists:", !!ASSEMBLYAI_API_KEY);
+console.log("MONGO_URI exists:", !!MONGO_URI);
+console.log("FRONTEND_URL:", FRONTEND_URL);
 
 app.use((req, _res, next) => {
-  console.log("Request Origin:", req.headers.origin);
+  console.log(`${req.method} ${req.originalUrl} | Origin:`, req.headers.origin || "no-origin");
   next();
 });
 
 app.use(
   cors({
-    origin: true,
+    origin: [FRONTEND_URL, "http://localhost:5173"],
     credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (origin) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  }
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
+app.options("*", cors());
 
 app.use(express.json());
 
@@ -66,7 +55,7 @@ const AudioSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Audio = mongoose.model("Audio", AudioSchema);
+const Audio = mongoose.models.Audio || mongoose.model("Audio", AudioSchema);
 
 const uploadsDir = path.resolve("uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -90,11 +79,21 @@ const safeDeleteFile = async (filePath) => {
   if (!filePath) return;
   try {
     await fs.promises.unlink(filePath);
-  } catch {}
+  } catch (err) {
+    console.log("File delete warning:", err?.message);
+  }
 };
 
 app.get("/", (_req, res) => {
   res.json({ ok: true, message: "Speech-to-text backend running" });
+});
+
+app.get("/health", (_req, res) => {
+  res.json({
+    ok: true,
+    mongoConnected: mongoose.connection.readyState === 1,
+    hasAssemblyKey: !!ASSEMBLYAI_API_KEY,
+  });
 });
 
 app.get("/live-token", async (_req, res) => {
@@ -113,17 +112,18 @@ app.get("/live-token", async (_req, res) => {
           Authorization: ASSEMBLYAI_API_KEY,
           "Content-Type": "application/json",
         },
+        timeout: 20000,
       }
     );
 
-    res.json({
-      token: tokenRes.data.token,
+    return res.json({
+      token: tokenRes?.data?.token,
       expires_in_seconds: 300,
     });
   } catch (err) {
     console.log("LIVE TOKEN ERROR FULL:", err?.response?.data || err?.message || err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error:
         err?.response?.data?.error ||
         err?.response?.data?.message ||
@@ -163,6 +163,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
           "content-type": "application/octet-stream",
         },
         maxBodyLength: Infinity,
+        timeout: 60000,
       }
     );
 
@@ -183,6 +184,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
           authorization: ASSEMBLYAI_API_KEY,
           "content-type": "application/json",
         },
+        timeout: 20000,
       }
     );
 
@@ -204,6 +206,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
           headers: {
             authorization: ASSEMBLYAI_API_KEY,
           },
+          timeout: 20000,
         }
       );
 
@@ -233,7 +236,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 
     await safeDeleteFile(filePath);
 
-    res.json({
+    return res.json({
       success: true,
       text,
       audio: savedAudio,
@@ -242,7 +245,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     console.log("TRANSCRIBE ERROR FULL:", err?.response?.data || err?.message || err);
     await safeDeleteFile(filePath);
 
-    res.status(500).json({
+    return res.status(500).json({
       error:
         err?.response?.data?.error ||
         err?.response?.data?.message ||
@@ -257,15 +260,35 @@ app.get("/history/:userId", async (req, res) => {
     console.log("History requested for userId:", req.params.userId);
     console.log("Mongo readyState:", mongoose.connection.readyState);
 
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(500).json({ error: "Database not connected" });
+    }
+
     const data = await Audio.find({ userId: req.params.userId }).sort({ createdAt: -1 });
 
-    res.json(data);
+    return res.json(data);
   } catch (err) {
     console.log("HISTORY ERROR FULL:", err);
-    res.status(500).json({
+    return res.status(500).json({
       error: err?.message || "Failed to fetch history",
     });
   }
+});
+
+app.use((err, _req, res, _next) => {
+  console.log("GLOBAL ERROR:", err?.response?.data || err?.message || err);
+
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  if (err?.message === "Only audio files are allowed") {
+    return res.status(400).json({ error: err.message });
+  }
+
+  return res.status(500).json({
+    error: err?.message || "Internal server error",
+  });
 });
 
 app.listen(PORT, () => {
