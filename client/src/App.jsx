@@ -594,7 +594,7 @@ function SpeechDashboard({ session }) {
         <aside className="hidden w-72 border-r border-white/10 bg-slate-900/70 p-6 md:block">
           <div className="mb-8">
             <div className="mb-2 text-xs uppercase tracking-[0.3em] text-teal-300/80">
-              DASHBOARD
+              Speech Studio
             </div>
             <h1 className="text-2xl font-semibold text-white">TranscribeFlow</h1>
             <p className="mt-2 text-sm text-slate-400">
@@ -632,7 +632,7 @@ function SpeechDashboard({ session }) {
 
         <main className="flex-1 p-4 md:p-8">
           <header className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-5">
-            <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">SPEECH STUDIO</div>
+            <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">Dashboard</div>
             <h2 className="mt-2 text-2xl font-semibold text-white">Speech-to-text workspace</h2>
             <p className="mt-2 text-sm text-slate-400">
               Use live transcription, recording, and upload.
@@ -691,7 +691,7 @@ function SpeechDashboard({ session }) {
                 <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
                   <div className="mb-4">
                     <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">Live Transcript</div>
-                    <h3 className="mt-2 text-xl font-semibold text-white">Live transcript card</h3>
+                    <h3 className="mt-2 text-xl font-semibold text-white">Single live transcript card</h3>
                   </div>
 
                   <div className="min-h-[380px] rounded-[24px] border border-white/10 bg-slate-950/60 p-5 text-sm leading-7 text-slate-200 whitespace-pre-wrap">
@@ -710,7 +710,7 @@ function SpeechDashboard({ session }) {
                     <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">History</div>
                     <h3 className="mt-2 text-xl font-semibold text-white">Old audio cards</h3>
                     <p className="mt-2 text-sm text-slate-400">
-                      Recorded and uploaded audio transcripts are shown here in the transcript section.
+                      Recorded and uploaded audio transcripts are shown here below the live transcript section.
                     </p>
                   </div>
 
@@ -780,7 +780,7 @@ function SpeechDashboard({ session }) {
 
                 <div className="w-full rounded-[20px] border border-white/10 bg-white/5 p-4 text-sm text-slate-300 whitespace-pre-wrap">
                   {recordLoading ? (
-                    <p className="text-yellow-300 font-bold">Processing your recorded audio...</p>
+                    <p>Processing your recorded audio...</p>
                   ) : recordTranscript ? (
                     recordTranscript
                   ) : (
@@ -815,7 +815,7 @@ function SpeechDashboard({ session }) {
 
                 <div className="mt-5 rounded-[20px] border border-white/10 bg-white/5 p-4 text-sm text-slate-300 whitespace-pre-wrap">
                   {uploadLoading ? (
-                    <p className="text-yellow-300 font-bold drop-shadow-lg animate-pulse">Uploading and transcribing your file...</p>
+                    <p>Uploading and transcribing your file...</p>
                   ) : uploadTranscript ? (
                     uploadTranscript
                   ) : (
