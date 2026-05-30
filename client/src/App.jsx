@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import AuthCallback from "./AuthCallback";
 
+// I use Assembly API
 const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 export default function App() {
