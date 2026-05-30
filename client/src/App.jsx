@@ -56,11 +56,13 @@ function AuthScreen() {
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage("");
+    setMessageType("");
 
     try {
       if (!email || !password) {
@@ -82,6 +84,7 @@ function AuthScreen() {
         setMessage(
           "Signup successful. Please check your email and click the verification link to continue."
         );
+        setMessageType("success");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -90,9 +93,11 @@ function AuthScreen() {
 
         if (error) throw error;
         setMessage("Login successful. Redirecting...");
+        setMessageType("success");
       }
     } catch (err) {
       setMessage(err.message || "Authentication failed");
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
@@ -102,15 +107,19 @@ function AuthScreen() {
     try {
       setLoading(true);
       setMessage("");
+      setMessageType("");
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
         },
       });
+
       if (error) throw error;
     } catch (err) {
       setMessage(err.message || "Google sign in failed");
+      setMessageType("error");
       setLoading(false);
     }
   };
@@ -138,6 +147,7 @@ function AuthScreen() {
                 onClick={() => {
                   setMode("login");
                   setMessage("");
+                  setMessageType("");
                 }}
                 className={`flex-1 rounded-xl px-4 py-3 text-sm font-medium transition ${
                   mode === "login"
@@ -152,6 +162,7 @@ function AuthScreen() {
                 onClick={() => {
                   setMode("signup");
                   setMessage("");
+                  setMessageType("");
                 }}
                 className={`flex-1 rounded-xl px-4 py-3 text-sm font-medium transition ${
                   mode === "signup"
@@ -209,7 +220,13 @@ function AuthScreen() {
               </div>
 
               {message && (
-                <div className="rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
+                <div
+                  className={`rounded-2xl px-4 py-3 text-sm ${
+                    messageType === "success"
+                      ? "border border-yellow-400/30 bg-yellow-400/10 text-yellow-300"
+                      : "border border-white/10 bg-slate-950/50 text-slate-300"
+                  }`}
+                >
                   {message}
                 </div>
               )}
@@ -247,6 +264,7 @@ function AuthScreen() {
                     onClick={() => {
                       setMode("signup");
                       setMessage("");
+                      setMessageType("");
                     }}
                     className="text-teal-300 hover:text-teal-200"
                   >
@@ -261,6 +279,7 @@ function AuthScreen() {
                     onClick={() => {
                       setMode("login");
                       setMessage("");
+                      setMessageType("");
                     }}
                     className="text-teal-300 hover:text-teal-200"
                   >
@@ -280,6 +299,7 @@ function SpeechDashboard({ session }) {
   const [activeTab, setActiveTab] = useState("live");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [recordTranscript, setRecordTranscript] = useState("");
   const [uploadTranscript, setUploadTranscript] = useState("");
@@ -312,6 +332,18 @@ function SpeechDashboard({ session }) {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (mobileSidebarOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileSidebarOpen]);
 
   const fetchHistoryAgain = async () => {
     if (!session?.user?.id) return;
@@ -588,6 +620,56 @@ function SpeechDashboard({ session }) {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto flex min-h-screen max-w-7xl">
+        {mobileSidebarOpen && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            <div
+              className="absolute inset-0 bg-black/60"
+              onClick={() => setMobileSidebarOpen(false)}
+            />
+            <aside className="absolute left-0 top-0 h-full w-72 border-r border-white/10 bg-slate-900/70 p-6">
+              <div className="mb-8">
+                <div className="mb-2 text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                  Speech Studio
+                </div>
+                <h1 className="text-2xl font-semibold text-white">TranscribeFlow</h1>
+                <p className="mt-2 text-sm text-slate-400">
+                  Live speaking, recording, uploads, and audio history in one workspace.
+                </p>
+              </div>
+
+              <nav className="space-y-2">
+                {navItems.map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => {
+                      setActiveTab(item.key);
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
+                      activeTab === item.key
+                        ? "bg-teal-500/15 text-teal-300 ring-1 ring-teal-400/30"
+                        : "text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+
+              <div className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-4">
+                <div className="text-sm text-slate-400">Logged in as</div>
+                <div className="mt-1 break-all text-sm text-white">{session.user.email}</div>
+                <button
+                  onClick={logout}
+                  className="mt-4 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm text-white hover:bg-white/15"
+                >
+                  Logout
+                </button>
+              </div>
+            </aside>
+          </div>
+        )}
+
         <aside className="hidden w-72 border-r border-white/10 bg-slate-900/70 p-6 md:block">
           <div className="mb-8">
             <div className="mb-2 text-xs uppercase tracking-[0.3em] text-teal-300/80">
@@ -628,6 +710,23 @@ function SpeechDashboard({ session }) {
         </aside>
 
         <main className="flex-1 p-4 md:p-8">
+          <div className="mb-4 flex items-center justify-between rounded-3xl border border-white/10 bg-white/5 p-4 md:hidden">
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                Dashboard
+              </div>
+              <div className="mt-1 text-lg font-semibold text-white">Speech-to-text workspace</div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+            >
+              Menu
+            </button>
+          </div>
+
           <header className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-5">
             <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">Dashboard</div>
             <h2 className="mt-2 text-2xl font-semibold text-white">Speech-to-text workspace</h2>
@@ -642,7 +741,9 @@ function SpeechDashboard({ session }) {
                 <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 p-6">
                   <div className="mb-4 flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">Live Speaking</div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                        Live Speaking
+                      </div>
                       <h3 className="mt-2 text-xl font-semibold">Speak into your microphone</h3>
                       <p className="mt-2 text-sm text-slate-400">
                         Start live speech and watch the transcript update in real time.
@@ -686,15 +787,21 @@ function SpeechDashboard({ session }) {
 
                 <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
                   <div className="mb-4">
-                    <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">Live Transcript</div>
-                    <h3 className="mt-2 text-xl font-semibold text-white">Single live transcript card</h3>
+                    <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                      Live Transcript
+                    </div>
+                    <h3 className="mt-2 text-xl font-semibold text-white">
+                      Single live transcript card
+                    </h3>
                   </div>
 
                   <div className="min-h-[380px] rounded-[24px] border border-white/10 bg-slate-950/60 p-5 text-sm leading-7 text-slate-200 whitespace-pre-wrap">
                     {liveTranscript ? (
                       liveTranscript
                     ) : (
-                      <p className="text-slate-500">Your live transcript will appear here while speaking.</p>
+                      <p className="text-slate-500">
+                        Your live transcript will appear here while speaking.
+                      </p>
                     )}
                   </div>
                 </div>
@@ -703,7 +810,9 @@ function SpeechDashboard({ session }) {
               <section className="mt-6 rounded-[28px] border border-white/10 bg-white/5 p-6">
                 <div className="mb-6 flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">History</div>
+                    <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                      History
+                    </div>
                     <h3 className="mt-2 text-xl font-semibold text-white">Old audio cards</h3>
                     <p className="mt-2 text-sm text-slate-400">
                       Recorded and uploaded audio transcripts are shown here below the live transcript section.
@@ -726,8 +835,12 @@ function SpeechDashboard({ session }) {
                   ) : history.length > 0 ? (
                     history.map((item) => (
                       <div key={item._id} className="rounded-[24px] border border-white/10 bg-slate-950/50 p-5">
-                        <div className="text-xs uppercase tracking-[0.2em] text-teal-300/80">Old Audio</div>
-                        <h4 className="mt-2 truncate text-sm font-medium text-white">{item.filename}</h4>
+                        <div className="text-xs uppercase tracking-[0.2em] text-teal-300/80">
+                          Old Audio
+                        </div>
+                        <h4 className="mt-2 truncate text-sm font-medium text-white">
+                          {item.filename}
+                        </h4>
                         <p className="mt-3 text-sm leading-6 text-slate-400 whitespace-pre-wrap">
                           {item.transcription}
                         </p>
@@ -749,8 +862,12 @@ function SpeechDashboard({ session }) {
           {activeTab === "record" && (
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-6">
               <div className="mb-6">
-                <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">Record Audio</div>
-                <h3 className="mt-2 text-xl font-semibold text-white">Capture voice from microphone</h3>
+                <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                  Record Audio
+                </div>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  Capture voice from microphone
+                </h3>
               </div>
 
               <div className="flex flex-col items-start gap-4 rounded-[24px] border border-white/10 bg-slate-950/50 p-6">
@@ -776,7 +893,10 @@ function SpeechDashboard({ session }) {
 
                 <div className="w-full rounded-[20px] border border-white/10 bg-white/5 p-4 text-sm text-slate-300 whitespace-pre-wrap">
                   {recordLoading ? (
-                    <p>Processing your recorded audio...</p>
+                    <div className="flex items-center gap-3 text-yellow-300">
+                      <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-yellow-300/30 border-t-yellow-300" />
+                      <p>Processing your recorded audio...</p>
+                    </div>
                   ) : recordTranscript ? (
                     recordTranscript
                   ) : (
@@ -790,8 +910,12 @@ function SpeechDashboard({ session }) {
           {activeTab === "upload" && (
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-6">
               <div className="mb-6">
-                <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">Upload Audio</div>
-                <h3 className="mt-2 text-xl font-semibold text-white">Select an audio file to transcribe</h3>
+                <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                  Upload Audio
+                </div>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  Select an audio file to transcribe
+                </h3>
               </div>
 
               <div className="rounded-[24px] border border-dashed border-white/10 bg-slate-950/50 p-6">
@@ -811,7 +935,10 @@ function SpeechDashboard({ session }) {
 
                 <div className="mt-5 rounded-[20px] border border-white/10 bg-white/5 p-4 text-sm text-slate-300 whitespace-pre-wrap">
                   {uploadLoading ? (
-                    <p>Uploading and transcribing your file...</p>
+                    <div className="flex items-center gap-3 text-yellow-300">
+                      <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-yellow-300/30 border-t-yellow-300" />
+                      <p>Uploading and transcribing your file...</p>
+                    </div>
                   ) : uploadTranscript ? (
                     uploadTranscript
                   ) : (
@@ -826,7 +953,9 @@ function SpeechDashboard({ session }) {
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-6">
               <div className="mb-6 flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">History</div>
+                  <div className="text-xs uppercase tracking-[0.3em] text-teal-300/80">
+                    History
+                  </div>
                   <h3 className="mt-2 text-xl font-semibold text-white">Saved audio transcripts</h3>
                 </div>
 
@@ -846,8 +975,12 @@ function SpeechDashboard({ session }) {
                 ) : history.length > 0 ? (
                   history.map((item) => (
                     <div key={item._id} className="rounded-[24px] border border-white/10 bg-slate-950/50 p-5">
-                      <div className="text-xs uppercase tracking-[0.2em] text-teal-300/80">Old Audio</div>
-                      <h4 className="mt-2 truncate text-sm font-medium text-white">{item.filename}</h4>
+                      <div className="text-xs uppercase tracking-[0.2em] text-teal-300/80">
+                        Old Audio
+                      </div>
+                      <h4 className="mt-2 truncate text-sm font-medium text-white">
+                        {item.filename}
+                      </h4>
                       <p className="mt-3 text-sm leading-6 text-slate-400 whitespace-pre-wrap">
                         {item.transcription}
                       </p>
