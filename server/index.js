@@ -33,8 +33,6 @@ app.use(
   })
 );
 
-app.options("*", cors());
-
 app.use(express.json());
 
 if (!MONGO_URI) {
@@ -93,6 +91,7 @@ app.get("/health", (_req, res) => {
     ok: true,
     mongoConnected: mongoose.connection.readyState === 1,
     hasAssemblyKey: !!ASSEMBLYAI_API_KEY,
+    frontendUrl: FRONTEND_URL,
   });
 });
 
