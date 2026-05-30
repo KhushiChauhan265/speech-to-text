@@ -7,12 +7,13 @@ import mongoose from "mongoose";
 import fs from "node:fs";
 import path from "node:path";
 
+
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
-const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;//initialized
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://speech-to-text-five-delta.vercel.app";
 
 console.log("ASSEMBLYAI_API_KEY exists:", !!ASSEMBLYAI_API_KEY);
@@ -109,16 +110,19 @@ app.get("/health", (_req, res) => {
 app.get("/live-token", async (_req, res) => {
   try {
     if (!ASSEMBLYAI_API_KEY) {
-      return res.status(500).json({ error: "ASSEMBLYAI_API_KEY is missing" });
+      return res.status(500).json({
+        error: "ASSEMBLYAI_API_KEY is missing",
+      });
     }
 
-    const tokenRes = await axios.post(
+    const tokenRes = await axios.get(
       "https://streaming.assemblyai.com/v3/token",
-      { expires_in_seconds: 300 },
       {
+        params: {
+          expires_in_seconds: 300,
+        },
         headers: {
           Authorization: ASSEMBLYAI_API_KEY,
-          "Content-Type": "application/json",
         },
         timeout: 20000,
       }
@@ -126,15 +130,17 @@ app.get("/live-token", async (_req, res) => {
 
     return res.json({
       token: tokenRes.data.token,
-      expires_in_seconds: 300,
     });
   } catch (err) {
-    console.log("LIVE TOKEN ERROR FULL:", err?.response?.data || err?.message || err);
+    console.log(
+      "LIVE TOKEN ERROR FULL:",
+      err?.response?.data || err?.message || err
+    );
 
     return res.status(500).json({
       error:
+        err?.response?.data?.detail ||
         err?.response?.data?.error ||
-        err?.response?.data?.message ||
         err?.message ||
         "Failed to generate live token",
     });
